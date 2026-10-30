@@ -1,0 +1,23 @@
+{
+  "threshold": 0.29867822888282125,
+  "target_spam_precision": 0.98,
+  "selected_model": {
+    "name": "tfidf_unigram_bigram_stop_removed_MultinomialNB",
+    "vectorizer": "tfidf",
+    "ngram_range": [
+      1,
+      2
+    ],
+    "remove_stop_words": true,
+    "model": "MultinomialNB",
+    "class_weight": null,
+    "precision_spam_mean": 1.0,
+    "precision_spam_std": 0.0,
+    "recall_spam_mean": 0.803010033444816,
+    "recall_spam_std": 0.03758021006375566,
+    "f1_spam_mean": 0.8903474734228356,
+    "f1_spam_std": 0.02377080683824665
+  },
+  "created_utc": "2026-10-29T18:23:06+00:00",
+  "python_version": "3.12.10"
+}

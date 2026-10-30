@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "files": {
+    "pipeline.joblib": {
+      "sha256": "12712a15c423bff2b30feeab022c8cf0a85a2e981ffd803965d532ae16097daf",
+      "size_bytes": 584368
+    },
+    "vectorizer.joblib": {
+      "sha256": "014e7a57da0767c6978e540cf2988f17e070dcfaa5d192a1097265780725cd82",
+      "size_bytes": 289078
+    },
+    "model_metadata.json": {
+      "sha256": "4eb082a33a1925647f2f38e322e40cfff1b3c031086763528f5a9cec474d7572",
+      "size_bytes": 627
+    }
+  }
+}

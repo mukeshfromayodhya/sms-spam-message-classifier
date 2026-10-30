@@ -1,0 +1,343 @@
+{
+  "documentType": "codex-security.findings",
+  "findings": [
+    {
+      "attackPath": {
+        "controls": [
+          "Current working tree removes control/format characters before redaction and recognizes Unicode and punycode bare domains."
+        ],
+        "dataflow": {
+          "evidenceRefs": [
+            "default-log-sink",
+            "log-redactor",
+            "url-pattern",
+            "email-pattern"
+          ],
+          "outcome": "a bare-domain token URL or format-separated contact detail remains in the log",
+          "sink": "local JSONL prediction log",
+          "source": "caller-supplied SMS message text",
+          "summary": "caller message -> _append_log -> redact_for_log -> unmatched sensitive value -> logs/sample_predictions.log"
+        },
+        "impact": {
+          "level": "low",
+          "why": "Sensitive data is stored locally; disclosure depends on other readers, backups, or retention outside the code's control."
+        },
+        "likelihood": {
+          "level": "low",
+          "why": "The caller needs local classifier access and must submit one of the redaction-bypass formats."
+        },
+        "limitations": [
+          "No service boundary or remote attacker route is established."
+        ],
+        "preconditions": [
+          "The normal logging path is used without --log-raw.",
+          "The message contains a bare-domain URL or an address with invisible format separators."
+        ],
+        "reachability": {
+          "attacker": "local caller with classifier access",
+          "entrypoint": "prediction CLI or Python caller followed by default _append_log",
+          "outcome": "sensitive URL/contact text is persisted in the local log",
+          "summary": "A local CLI/API caller with permission to invoke the classifier can trigger the default log path. No remote route is established by source."
+        },
+        "summary": "A caller submits a message whose URL or contact value uses a format the snapshot regexes do not recognize; normal logging persists the unmasked value."
+      },
+      "codeEvidence": [
+        {
+          "code": "_EMAIL_RE = re.compile(r\"\\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\\.[A-Za-z]{2,63}\\b\")",
+          "endLine": 12,
+          "explanation": "The scan snapshot's email pattern accepts only ASCII address characters, so a zero-width format character can split a message address and prevent a match.",
+          "id": "email-pattern",
+          "label": "Snapshot email recognizer accepts only contiguous ASCII addresses",
+          "language": "python",
+          "path": "src/spam_classifier/preprocess.py",
+          "role": "root_control",
+          "startLine": 12
+        },
+        {
+          "code": "_URL_RE = re.compile(r\"(?i)\\b(?:https?://|www\\.)[^\\s<>()]+\")",
+          "endLine": 13,
+          "explanation": "The scan snapshot matches only scheme-prefixed and www-prefixed URLs; bare domains and their sensitive paths or query strings pass through.",
+          "id": "url-pattern",
+          "label": "Snapshot URL recognizer requires a scheme or www prefix",
+          "language": "python",
+          "path": "src/spam_classifier/preprocess.py",
+          "role": "root_control",
+          "startLine": 13
+        },
+        {
+          "code": "def redact_for_log(text: str) -> str:\n    \"\"\"Mask URLs, email addresses, and phone numbers in message logs.\"\"\"\n    masked = unicodedata.normalize(\"NFKC\", text)\n    masked = _EMAIL_RE.sub(\"<EMAIL>\", masked)\n    masked = _URL_RE.sub(\"<URL>\", masked)\n    masked = _PHONE_RE.sub(\"<PHONE>\", masked)\n    return \" \".join(masked.split())",
+          "endLine": 66,
+          "explanation": "The log-specific redactor applies NFKC but does not call validate_message to remove Cf characters before applying the limited patterns.",
+          "id": "log-redactor",
+          "label": "Default redactor normalizes but does not strip format characters",
+          "language": "python",
+          "path": "src/spam_classifier/preprocess.py",
+          "role": "root_control",
+          "startLine": 60
+        },
+        {
+          "code": "def _append_log(text: str, result: dict[str, float | str], *, log_raw: bool) -> None:\n    LOG_DIR.mkdir(parents=True, exist_ok=True)\n    message = text if log_raw else redact_for_log(text)\n    entry = {\"timestamp_utc\": datetime.now(timezone.utc).isoformat(timespec=\"seconds\"), \"message\": message, \"raw_message_enabled\": log_raw, **result}\n    log_path = LOG_DIR / \"sample_predictions.log\"\n    with log_path.open(\"a\", encoding=\"utf-8\") as log_file:\n        log_file.write(json.dumps(entry, ensure_ascii=False) + \"\\n\")",
+          "endLine": 52,
+          "explanation": "The caller's original message is redacted unless log_raw is enabled, then the resulting message value is serialized and appended to the local log.",
+          "id": "default-log-sink",
+          "label": "Default CLI log writes the redacted text to disk",
+          "language": "python",
+          "path": "src/spam_classifier/predict.py",
+          "role": "sink",
+          "startLine": 40
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "The regex limitations, default redaction branch, and local file sink are direct source evidence; exploitability does not depend on a speculative network route."
+      },
+      "extensions": {
+        "candidateId": "baseline-log-redaction-bypass",
+        "workingTreeRemediation": "Applied and verified after the scan target snapshot."
+      },
+      "findingId": "csf_23dd122ba2b1642ca0756f4d",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:3f920b300172c58487dd24c25ddcd5af63b23f51620fcbd2682e6de7b8827ca7"
+      },
+      "identity": {
+        "anchor": "src/spam_classifier/preprocess.py"
+      },
+      "locations": [
+        {
+          "endLine": 13,
+          "path": "src/spam_classifier/preprocess.py",
+          "role": "root_control",
+          "startLine": 12
+        },
+        {
+          "endLine": 66,
+          "path": "src/spam_classifier/preprocess.py",
+          "role": "root_control",
+          "startLine": 60
+        },
+        {
+          "endLine": 52,
+          "path": "src/spam_classifier/predict.py",
+          "role": "sink",
+          "startLine": 40
+        }
+      ],
+      "occurrenceId": "occ_da8f5fa1094dad8af5ec1273",
+      "preventiveControls": [
+        "Keep redaction at the log sink so all callers receive the same privacy control.",
+        "Keep raw message logging behind the explicit --log-raw option."
+      ],
+      "provenance": {
+        "candidateId": "baseline-log-redaction-bypass",
+        "source": "security_baseline"
+      },
+      "remediation": "Normalize and remove invisible control/format characters before logging, then redact scheme-prefixed and bare ASCII, Unicode, and punycode domains alongside email and phone formats. Keep regression tests at the log-redaction sink.",
+      "remediationTests": [
+        "Test that zero-width characters cannot split email addresses or phone numbers in default log redaction.",
+        "Test that bare ASCII, Unicode, and punycode domains with sensitive paths and query strings are fully masked.",
+        "Run the CLI in default mode and confirm the persisted JSONL message contains only redacted contact/URL tokens."
+      ],
+      "rootCause": {
+        "evidenceRefs": [
+          "default-log-sink",
+          "log-redactor",
+          "email-pattern",
+          "url-pattern"
+        ],
+        "summary": "The violated invariant is that URLs, email addresses, and phone numbers must be masked before default log persistence. In the scan snapshot, `redact_for_log()` applied NFKC but not the control/format-character cleanup used by `validate_message()`, while its URL pattern required `http(s)://` or `www.` and its email pattern accepted only ASCII characters. `_append_log()` sent the original message through that redactor and then serialized the result to disk."
+      },
+      "ruleId": "sensitive-data-default-log-redaction-bypass",
+      "severity": {
+        "changeConditions": "Severity would rise if the log were shared with less-trusted users, backed up to a broader-access service, or written by a remotely reachable wrapper; it would fall if logs were operator-only and short-lived.",
+        "level": "low",
+        "rationale": "The leak is confined to a local log in the documented local CLI; a caller must have access to invoke the classifier, and no remote logging interface is established. Sensitive tokens or contact details can persist for other local readers or backups, but host ACLs and retention are unknown."
+      },
+      "summary": "Submit a message containing a bare-domain URL with a token in its query string, or an email split by a zero-width character, through the normal prediction logging path. In the scan snapshot, the default redactor misses those formats and writes them to `logs/sample_predictions.log`, contrary to the requested privacy control.",
+      "taxonomy": {
+        "category": "Sensitive information exposure through local logs",
+        "cwe": [
+          "CWE-532"
+        ]
+      },
+      "title": "Default log redaction can leave sensitive URLs and contact details in the prediction log",
+      "validation": {
+        "assertions": [
+          "The default CLI path selects the redactor; raw logging is an explicit option.",
+          "The URL matcher in the scan snapshot excludes bare domains.",
+          "The email pattern in the scan snapshot excludes hidden format separators.",
+          "The current-tree tests cover Unicode/punycode bare domains and control-character-separated addresses."
+        ],
+        "counterEvidence": [
+          "Conventional scheme-prefixed URLs, www-prefixed URLs, ASCII email addresses, and ordinary phone numbers were matched.",
+          "The logs directory is Git-ignored, and raw logging requires --log-raw; neither control catches the snapshot pattern bypass."
+        ],
+        "evidenceRefs": [
+          "default-log-sink",
+          "log-redactor",
+          "email-pattern",
+          "url-pattern"
+        ],
+        "limitations": [
+          "The scan is bound to the pre-remediation immutable snapshot; the fix and regression checks were applied to the current working tree after that snapshot.",
+          "No host-level access, backup, or retention configuration is present in the repository."
+        ],
+        "method": "Static source-to-sink trace; regression tests and smoke checks on the remediated working tree",
+        "summary": "The snapshot code passes caller text to `_append_log()`, whose default branch calls `redact_for_log()` and appends the result. The snapshot patterns do not recognize bare-domain URLs or format-separated contact values. The current working tree now uses `validate_message()` before redaction and recognizes Unicode and punycode domains; its regression tests cover hidden email/phone separators and sensitive paths/query strings."
+      }
+    },
+    {
+      "attackPath": {
+        "controls": [
+          "The current working tree preflights artifact-directory and leaf symlinks and writes through temporary files before atomic replacement."
+        ],
+        "dataflow": {
+          "evidenceRefs": [
+            "trainer-write-order",
+            "manifest-write"
+          ],
+          "outcome": "a file outside artifacts/ is overwritten or truncated",
+          "sink": "joblib.dump or MANIFEST_PATH.write_text following the destination symlink",
+          "source": "local filesystem access to artifacts/",
+          "summary": "attacker-writable artifacts directory -> planted symlink -> run_training direct joblib/metadata write or manifest write -> external owner-writable target"
+        },
+        "impact": {
+          "level": "low",
+          "why": "This is a local integrity issue; the file target and effective privileges depend on host ACLs."
+        },
+        "likelihood": {
+          "level": "low",
+          "why": "It requires local artifact-directory write access and a later training run."
+        },
+        "limitations": [
+          "No privilege elevation or remote training path is established."
+        ],
+        "preconditions": [
+          "Attacker can create a symlink under artifacts/.",
+          "Training runs after the symlink is created.",
+          "The linked target is writable by the training process."
+        ],
+        "reachability": {
+          "attacker": "local user with write access to the artifact directory",
+          "entrypoint": "routine local training command",
+          "outcome": "overwrites a file writable by the training process",
+          "summary": "The attacker must be able to create a symlink in the project artifact directory and have the operator run training. No remote interface or automatic training trigger is established."
+        },
+        "summary": "A local writer creates a symlink at a fixed output path, then a training run opens that path and writes with the training user's filesystem permissions."
+      },
+      "codeEvidence": [
+        {
+          "code": "ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)\nLOG_DIR.mkdir(parents=True, exist_ok=True)\njoblib.dump(pipeline, PIPELINE_PATH, compress=3)\njoblib.dump(pipeline.named_steps[\"vectorizer\"], VECTORIZER_PATH, compress=3)\nMETADATA_PATH.write_text(json.dumps(metadata, indent=2) + \"\\n\", encoding=\"utf-8\")\nwrite_checksum_manifest()",
+          "endLine": 789,
+          "explanation": "The scan snapshot writes both joblib files and metadata directly to their final destinations before invoking the manifest checks.",
+          "id": "trainer-write-order",
+          "label": "Trainer writes artifact paths before checksum validation",
+          "language": "python",
+          "path": "src/spam_classifier/train.py",
+          "role": "root_control",
+          "startLine": 784
+        },
+        {
+          "code": "for name, path in _TRUSTED_FILES.items():\n    if path.is_symlink() or not path.is_file():\n        raise ArtifactIntegrityError(f\"Expected a regular artifact file: {path}\")\n    content = path.read_bytes()\n    files[name] = {\"sha256\": _sha256(content), \"size_bytes\": len(content)}\nmanifest = {\"schema_version\": 1, \"files\": files}\nARTIFACT_DIR.mkdir(parents=True, exist_ok=True)\nMANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + \"\\n\", encoding=\"utf-8\")",
+          "endLine": 45,
+          "explanation": "The later check examines the three bundled inputs, but it neither protects the earlier writes nor rejects a symlink at the manifest destination before write_text follows it.",
+          "id": "manifest-write",
+          "label": "Manifest destination is written without a symlink guard",
+          "language": "python",
+          "path": "src/spam_classifier/security.py",
+          "role": "sink",
+          "startLine": 34
+        }
+      ],
+      "confidence": {
+        "level": "high",
+        "rationale": "The direct writes precede the symlink checks in the scan snapshot, and the manifest destination is written directly without a check."
+      },
+      "extensions": {
+        "candidateId": "artifact-write-symlink",
+        "workingTreeRemediation": "Applied and verified after the scan target snapshot."
+      },
+      "findingId": "csf_ed9d57e7a6a522bc22615ff7",
+      "fingerprints": {
+        "algorithm": "codex-security/v1",
+        "primary": "codex-security/v1:sha256:f2c2b1a45e83463b4dfc00135d415d690062bf82fa0ac294089edaaec06df9c4"
+      },
+      "identity": {
+        "anchor": "src/spam_classifier/train.py"
+      },
+      "locations": [
+        {
+          "endLine": 789,
+          "path": "src/spam_classifier/train.py",
+          "role": "root_control",
+          "startLine": 784
+        },
+        {
+          "endLine": 45,
+          "path": "src/spam_classifier/security.py",
+          "role": "sink",
+          "startLine": 34
+        }
+      ],
+      "occurrenceId": "occ_a6800061d0e92afcfefb31c7",
+      "preventiveControls": [
+        "Keep artifact directories operator-owned and access-controlled.",
+        "Use same-directory temporary writes and atomic replacement for generated bundle members."
+      ],
+      "provenance": {
+        "candidateId": "artifact-write-symlink",
+        "source": "artifact_audit"
+      },
+      "remediation": "Before training writes, reject a symlinked artifact directory and every fixed artifact destination, including the manifest. Write each output to a same-directory temporary file and atomically replace the fixed destination.",
+      "remediationTests": [
+        "Create symlinks for the pipeline and manifest destinations and assert that artifact preflight rejects both without changing the outside target.",
+        "Retrain successfully using regular artifact destinations and verify the regenerated SHA-256 manifest before prediction."
+      ],
+      "rootCause": {
+        "evidenceRefs": [
+          "trainer-write-order",
+          "manifest-write"
+        ],
+        "summary": "The violated invariant is that training may update only fixed regular files inside the trusted artifact bundle. In the scan snapshot, `joblib.dump()` and `Path.write_text()` opened final destinations before any symlink preflight. `write_checksum_manifest()` later checked only the three input files and wrote the manifest path directly, so a planted link could redirect a write outside the bundle."
+      },
+      "ruleId": "training-artifact-symlink-write",
+      "severity": {
+        "changeConditions": "Severity would rise if an untrusted user could write the artifact directory while the trainer runs with broader privileges; it would fall if the directory is strictly operator-owned and training is never run with elevated rights.",
+        "level": "low",
+        "rationale": "The path is local and requires write access to the artifact directory plus a training run; no remote trigger is established. It can cross the artifact-directory boundary and modify another file with the training process's rights."
+      },
+      "summary": "If a person who can write the `artifacts/` directory plants a symlink and the project owner runs training, the scan snapshot writes the model or metadata through that link before checking the bundle. A symlink at the manifest path is also followed, so a different owner-writable local file can be truncated or replaced.",
+      "taxonomy": {
+        "category": "Improper link resolution in local file writes",
+        "cwe": [
+          "CWE-59"
+        ]
+      },
+      "title": "Training can overwrite another local file through an artifact symlink",
+      "validation": {
+        "assertions": [
+          "The original training flow wrote pipeline, vectorizer, and metadata before calling write_checksum_manifest.",
+          "The original manifest writer did not reject a symlink at MANIFEST_PATH.",
+          "The current-tree regression tests verify symlink preflight preserves an outside sentinel file."
+        ],
+        "counterEvidence": [
+          "The prediction loader itself rejects direct artifact symlinks and verifies digests before deserialization.",
+          "The documentation requires the artifact directory to remain trusted and access-controlled.",
+          "The issue requires a local actor able to place a symlink and a subsequent training run."
+        ],
+        "evidenceRefs": [
+          "trainer-write-order",
+          "manifest-write"
+        ],
+        "limitations": [
+          "Host ACLs and whether a lower-trust local actor can write artifacts/ are not established by source.",
+          "The scan report is tied to the pre-remediation immutable snapshot; tests and retraining were performed against the current working tree."
+        ],
+        "method": "Static write-order trace; symlink regression tests and full retraining on the remediated working tree",
+        "summary": "Source inspection confirmed direct writes occur before the post-write regular-file check and that the manifest write has no destination check. The current working tree now rejects a symlinked artifact directory or destination before training, writes through same-directory temporary files, and atomically replaces fixed bundle paths. Tests exercise symlinked pipeline and manifest destinations without modifying the outside target; the complete training run succeeded."
+      }
+    }
+  ],
+  "scanId": "841f7183-d37c-4f11-8ca7-b2d316228ced",
+  "schemaVersion": "1.0"
+}

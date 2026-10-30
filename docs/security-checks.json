@@ -1,0 +1,17 @@
+{
+  "bandit": {
+    "status": "passed",
+    "command": "bandit -r src tests --skip B101,B105",
+    "details": "No findings. B101 is excluded for pytest assertions. B105 is excluded because it flags scikit-learn's token_pattern=None configuration as a possible password; the source and tests were reviewed for credential assignments."
+  },
+  "pip_audit": {
+    "status": "passed",
+    "command": "pip-audit --skip-editable",
+    "details": "No known vulnerabilities found in installed packages. The editable local project package is skipped because it is not published to a package index. pip 26.2.2 was installed before the audit."
+  },
+  "pytest": {
+    "status": "passed",
+    "command": "python -m pytest -q",
+    "details": "16 tests passed, including Unicode and punycode URL redaction and symlinked artifact destination refusal."
+  }
+}
